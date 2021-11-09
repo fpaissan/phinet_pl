@@ -6,8 +6,18 @@ import torch
 
 class PhiNetConvBlock(nn.Module):
     """Implements PhiNet's convolutional block"""
-
-    def __init__(self, in_shape, expansion, stride, filters, has_se, block_id=None, res=True, h_swish=True, k_size=3, dp_rate=0.05):
+    def __init__(self,
+                 in_shape,
+                 expansion,
+                 stride,
+                 filters,
+                 has_se,
+                 block_id=None,
+                 res=True,
+                 h_swish=True,
+                 k_size=3,
+                 dp_rate=0,
+                 sd_p=1):
         """Defines the structure of the PhiNet conv block
 
         Args:
@@ -20,9 +30,11 @@ class PhiNetConvBlock(nn.Module):
             res (bool, optional): [description]. Defaults to True.
             h_swish (bool, optional): [description]. Defaults to True.
             k_size (int, optional): [description]. Defaults to 3.
+            sd_p (float, optional): [stochastic depth probability]. Defaults to 0.
         """
         super(PhiNetConvBlock, self).__init__()
         self.skip_conn = False
+        self.pdf = torch.distributions.bernoulli.Bernoulli(torch.Tensor([sd_p]))
 
         self._layers = torch.nn.ModuleList()
         in_channels = in_shape[0]
@@ -125,6 +137,12 @@ class PhiNetConvBlock(nn.Module):
             x = l(x)
 
         if self.skip_conn:
-            return x + inp
-
-        return x
+            if self.training:
+                if torch.equal(self.pdf.sample(), torch.ones(1)):
+                    return x + inp
+                else:
+                    return inp
+            else:
+                return x + inp  # can also be x*self.sd_p + inp
+        else:
+            return x

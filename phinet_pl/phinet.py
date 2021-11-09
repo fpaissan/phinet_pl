@@ -2,6 +2,7 @@ from phinet_pl.model_utils import DepthwiseConv2d, SeparableConv2d, ReLUMax, HSw
 from phinet_pl.phinet_convblock import PhiNetConvBlock
 
 import torch.nn as nn
+import numpy as np
 import torch
 
 
@@ -9,7 +10,7 @@ class PhiNet(nn.Module):
     def __init__(self, res=96, in_channels=3, B0=7, alpha=0.2, beta=1.0, t_zero=6, h_swish=False, squeeze_excite=False,
                  downsampling_layers=[5, 7], conv5_percent=0, first_conv_stride=2, first_conv_filters=48, b1_filters=24,
                  b2_filters=48, include_top=False, pooling=None, num_classes=10, residuals=True, input_tensor=None, conv2d_input=False,
-                 pool=False):
+                 pool=False, p_l=0.5):
         """Generates PhiNets architecture
 
         Args:
@@ -34,10 +35,16 @@ class PhiNet(nn.Module):
         """
         super(PhiNet, self).__init__()
         self.classify = include_top
-
+        p_l = 0.5
         num_blocks = round(B0)
         input_shape = (round(res), round(res), in_channels)
-
+        if p_l != 1:
+            prob_step = (1-p_l)/(round(B0) - 1)
+            sd_p = np.arange(p_l, 1, prob_step)
+            sd_p = sd_p[::-1]
+        else:
+            sd_p = [1]*(round(B0) - 1)
+                
         self._layers = torch.nn.ModuleList()
 
         # Define self.activation function
@@ -47,7 +54,7 @@ class PhiNet(nn.Module):
             activation = ReLUMax(6)
             
         mp = nn.MaxPool2d((2, 2))
-
+        
         if not conv2d_input:
             pad = nn.ZeroPad2d(
                 padding=correct_pad(input_shape, 3),
@@ -102,7 +109,8 @@ class PhiNet(nn.Module):
             block_id=1,
             has_se=squeeze_excite,
             res=residuals,
-            h_swish=h_swish
+            h_swish=h_swish,
+            sd_p=sd_p[0]
         )
         
         block3 = PhiNetConvBlock(
@@ -113,7 +121,8 @@ class PhiNet(nn.Module):
             block_id=2,
             has_se=squeeze_excite,
             res=residuals,
-            h_swish=h_swish
+            h_swish=h_swish,
+            sd_p=sd_p[1]
         )
 
         block4 = PhiNetConvBlock(
@@ -124,7 +133,8 @@ class PhiNet(nn.Module):
             block_id=3,
             has_se=squeeze_excite,
             res=residuals,
-            h_swish=h_swish
+            h_swish=h_swish,
+            sd_p=sd_p[2]
         )
 
         self._layers.append(block2)
@@ -155,7 +165,8 @@ class PhiNet(nn.Module):
                     has_se=squeeze_excite,
                     res=residuals,
                     h_swish=h_swish,
-                    k_size=(5 if (block_id / num_blocks) > (1 - conv5_percent) else 3)
+                    k_size=(5 if (block_id / num_blocks) > (1 - conv5_percent) else 3),
+                    sd_p=sd_p[block_id-2]
             )
             
 
